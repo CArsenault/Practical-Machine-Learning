@@ -1,0 +1,94 @@
+---
+title: Practical Machine Learning Course Project
+author: "Christine Arsenault"
+date: "June 14, 2018"
+output: html_document
+---
+```
+PROJECT DESCRIPTION
+One thing that people do regularly is quantify how much of a particular activity  they do, but they rarely quantify how well they do it.  In this project, your goal will be to use data from accelerometers on the belt, forearm, arm and  dumbbell of 6 participants.
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+This process starts with setting the working directories, loading the data and libraries, and then partitioning the data.
+```{r}
+library(caret)
+library(rattle)
+setwd("C:/Users/Songbird2015/Desktop/Coursera/Practical Machine Learning")
+DatTrain <- read.csv(file="pml-training.csv", header=TRUE, sep=",")
+dim(DatTrain)
+str(DatTrain)
+
+DatVal <- read.csv(file="pml-testing.csv", header=TRUE, sep=",")
+dim(DatVal)
+
+
+set.seed(1000)
+DatTrim <-createDataPartition(y=DatTrain$classe, p=.75, list=FALSE)
+TrainSamp <- DatTrain[DatTrim,]
+TestSamp <- DatTrain[-DatTrim,]
+
+```
+The training data set consists of 19,622 rows and 160 columns  Profiling the data revealed that some of the columns contained blanks or values of NA.  These need to be removed before proceeding.  Additionally, the first seven columns contain time or personal data and will be ignored as well.  This reduces the data from 160 to 53 columns.
+```{r}
+DatTrim_NZ <- sapply(names(DatVal), function(x) all(is.na(DatVal[,x])==TRUE))
+NZTestDat <- names(DatTrim_NZ)[DatTrim_NZ==FALSE]
+NZTestDat <- NZTestDat[-(1:7)]
+NZTestDat <- NZTestDat[1:(length(NZTestDat)-1)]
+fitControl <- trainControl(method="cv", number=5)
+```
+There are advantages to using decision trees during model selection.  They perform feature selection autmatically, there is only a small amount of data preparation required, and they are easily explained to business partners.  The three models that were used for this analysis are: Decision Tree (rpart), Boosting Trees (gbm) and Random Forest (rf).
+```{r echo=FALSE,results='hide',fig.keep='all'}
+invisible(model_cart <- caret::train(
+        classe ~ ., 
+        data=TrainSamp[, c('classe', NZTestDat)],
+        trControl=fitControl,
+        method='rpart'
+))
+save(model_cart, file='./ModelFitCART.RData')
+invisible(model_gbm <- caret::train(
+        classe ~ ., 
+        data=TrainSamp[, c('classe', NZTestDat)],
+        trControl=fitControl,
+        method='gbm'
+))
+save(model_gbm, file='./ModelFitGBM.RData')
+invisible(model_rf <- caret::train(
+        classe ~ ., 
+        data=TrainSamp[, c('classe', NZTestDat)],
+        trControl=fitControl,
+        method='rf',
+        ntree=100
+))
+save(model_rf, file='./ModelFitRF.RData')
+```
+Cross validation is a technique that is utilized during the model training process to better estimate the test error of a particular model.
+
+```{r}
+fitControl <- trainControl(method='cv', number = 3)
+```
+Next, the Out-of-Sample (OOS) errors were reviewed.  OOS is used to test model assumptions and compare forecasting against other models.  This revealed that both GBM (~96.5%) and RF (~99.2%) are better at prediction for this set of data than the rpart (~51.2%) model.  
+```{r}
+predCART <- predict(model_cart, newdata=TestSamp)
+cmCART <- confusionMatrix(predCART, TestSamp$classe)
+predGBM <- predict(model_gbm, newdata=TestSamp)
+cmGBM <- confusionMatrix(predGBM, TestSamp$classe)
+predRF <- predict(model_rf, newdata=TestSamp)
+cmRF <- confusionMatrix(predRF, TestSamp$classe)
+AccuracyResults <- data.frame(
+        Model = c('CART', 'GBM', 'RF'),
+        Accuracy = rbind(cmCART$overall[1], cmGBM$overall[1], cmRF$overall[1])
+)
+print(AccuracyResults)
+```
+As Random Forest has the highest accuracy, it will be used for predict the values of classe. 
+```{r}
+predictTEST <- predict(model_rf, newdat=DatVal)
+predictTEST
+
+ValidationPredictionResults <- data.frame(
+        problem_id=DatVal$problem_id,
+        predicted=predictTEST
+)
+print(ValidationPredictionResults)
+```
